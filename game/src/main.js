@@ -306,9 +306,9 @@ function updateCamera(dt) {
   if (mode === 'menu' || mode === 'results' || mode === 'crashed') {
     const cx = mode === 'menu' ? -330 : P ? P.x : -330;
     const cz = RUNWAY.cz, cy = RUNWAY.y + 2.3;
-    const ang = SHOT ? -0.5 : performance.now() * 0.00004;
-    const r = mode === 'menu' ? 64 : 120;
-    camera.position.set(cx + Math.cos(ang) * r, cy + (mode === 'menu' ? 13 : 26), cz + Math.sin(ang) * r);
+    const ang = SHOT === 'complete' ? 0.9 : SHOT === 'title' ? -0.15 : SHOT ? -0.5 : performance.now() * 0.00004;
+    const r = mode === 'menu' ? (SHOT === 'title' ? 52 : 64) : 120;
+    camera.position.set(cx + Math.cos(ang) * r, cy + (mode === 'menu' ? (SHOT === 'title' ? 11 : 13) : 26), cz + Math.sin(ang) * r);
     camera.lookAt(cx + 10, cy + 5, cz);
     camera.fov = 55; camera.updateProjectionMatrix();
     return;
@@ -398,7 +398,7 @@ function buildSceneIfAircraft(hit) {
 }
 function parkPlane() {
   P = {
-    x: -330, y: RUNWAY.y + 2.3, z: RUNWAY.cz, course: 0.42, pitch: 0, roll: 0,
+    x: -330, y: RUNWAY.y + 2.3, z: RUNWAY.cz, course: 0.3, pitch: 0, roll: 0,
     speed: 0, vy: 0, throttle: 0, fuel: 0.9, airframe: 1,
     gearDown: true, flaps: 0, onGround: true, stall: false, flameout: false,
   };
@@ -424,7 +424,7 @@ function stageShot() {
     for (let i = 0; i < world.gates.length; i++) setGateState(world, i, 'passed');
     gateIdx = world.gates.length; gatesDone = 6; score = 1275; combo = 6; maxCombo = 6;
     phase = 'final'; view = 'cockpit'; camera.fov = 66; camera.updateProjectionMatrix();
-    Object.assign(P, { x: -1250, y: 70, z: 936, course: 0.015, pitch: -0.05, roll: 0.02, speed: 33, throttle: 0.34, fuel: 0.38, onGround: false, gearDown: true, flaps: 15 });
+    Object.assign(P, { x: -1050, y: 62, z: 938, course: 0.015, pitch: -0.05, roll: 0.02, speed: 33, throttle: 0.34, fuel: 0.38, onGround: false, gearDown: true, flaps: 15 });
     elapsed = 158;
     updatePAPI(world, '09', P.y - (RUNWAY.y + Math.max(0, (RUNWAY.cx - RUNWAY.len / 2) - P.x) * 0.0524));
     banner = { title: 'FINAL — RWY 09', sub: 'Follow the PAPI · two white, two red', until: performance.now() + 1e9 };

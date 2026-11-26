@@ -2,6 +2,7 @@
 // One analytic height field drives the terrain mesh, the physics ground
 // collision and the HUD sector map, so all three always agree.
 import * as THREE from 'three';
+import { buildAircraft } from './plane.js';
 
 export const ISLANDS = [
   { x: -150, z: 300, r: 1300, h: 215, name: 'PULAU RAJAWALI' },
@@ -181,11 +182,11 @@ export function buildWorld(scene, lightingName) {
   // Trees — instanced cones on green slopes.
   const treeGeo = new THREE.ConeGeometry(7, 22, 6);
   const treeMat = new THREE.MeshStandardMaterial({ color: 0x2c6e35, flatShading: true, roughness: 1 });
-  const trees = new THREE.InstancedMesh(treeGeo, treeMat, 900);
+  const trees = new THREE.InstancedMesh(treeGeo, treeMat, 1500);
   const dummy = new THREE.Object3D();
   let ti = 0, seed = 7;
   const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-  while (ti < 900) {
+  while (ti < 1500) {
     const x = (rnd() - 0.5) * 7200, z = (rnd() - 0.5) * 7200;
     const h = heightAt(x, z);
     if (h < 8 || h > 165) continue;
@@ -199,6 +200,63 @@ export function buildWorld(scene, lightingName) {
   }
   trees.count = ti;
   scene.add(trees);
+
+  // Houses — little villages on the lower slopes (instanced walls + roofs).
+  const walls = new THREE.InstancedMesh(new THREE.BoxGeometry(16, 9, 13),
+    new THREE.MeshStandardMaterial({ color: 0xe8ddc8, flatShading: true, roughness: 1 }), 130);
+  const roofs = new THREE.InstancedMesh(new THREE.ConeGeometry(13, 7, 4),
+    new THREE.MeshStandardMaterial({ color: 0xa34d2e, flatShading: true, roughness: 1 }), 130);
+  let hi = 0;
+  const clusters = [
+    { x: -420, z: 600, r: 250, n: 46 },
+    { x: 620, z: 2050, r: 200, n: 30 },
+    { x: -820, z: 1900, r: 190, n: 26 },
+    { x: -1900, z: 420, r: 240, n: 28 },
+  ];
+  for (const c of clusters) {
+    let placed = 0, guard = 0;
+    while (placed < c.n && guard++ < 500) {
+      const x = c.x + (rnd() - 0.5) * 2 * c.r, z = c.z + (rnd() - 0.5) * 2 * c.r;
+      const h = heightAt(x, z);
+      if (h < 7 || h > 120) continue;
+      if (Math.abs(z - RUNWAY.cz) < 185 && Math.abs(x) < 2500) continue;
+      const s = 0.8 + rnd() * 0.7, ry = rnd() * Math.PI;
+      dummy.position.set(x, h + 4 * s, z); dummy.scale.set(s, s, s); dummy.rotation.set(0, ry, 0); dummy.updateMatrix();
+      walls.setMatrixAt(hi, dummy.matrix);
+      dummy.position.y = h + 11.5 * s; dummy.rotation.set(0, ry + Math.PI / 4, 0); dummy.updateMatrix();
+      roofs.setMatrixAt(hi, dummy.matrix);
+      hi++; placed++;
+    }
+  }
+  walls.count = hi; roofs.count = hi;
+  scene.add(walls); scene.add(roofs);
+
+  // Boats — hulls and sails on the water near the coasts.
+  const boatGroup = new THREE.Group();
+  const hullMat = new THREE.MeshStandardMaterial({ color: 0xb5502e, flatShading: true, roughness: 1 });
+  const sailMat = new THREE.MeshStandardMaterial({ color: 0xf6f1e3, flatShading: true, side: THREE.DoubleSide });
+  const boatSpots = [[900, 1450, 0.7], [-900, 1650, 2.4], [1400, 700, 1.2], [-1650, -350, 2.9], [2500, 350, 0.4], [450, -1150, 1.8], [-600, 2800, 2.2], [1700, 1700, 5.3], [-2500, 1350, 1.5], [1000, -1650, 3.8]];
+  for (const [bx, bz, bry] of boatSpots) {
+    if (heightAt(bx, bz) > -2) continue;
+    const b = new THREE.Group();
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(16, 3.4, 5), hullMat); hull.position.y = 1.2; b.add(hull);
+    const bow = new THREE.Mesh(new THREE.ConeGeometry(2.6, 6, 4), hullMat);
+    bow.rotation.z = -Math.PI / 2; bow.rotation.y = Math.PI / 4; bow.position.set(10.5, 1.2, 0); b.add(bow);
+    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 15), hullMat); mast.position.y = 9; b.add(mast);
+    const sail = new THREE.Mesh(new THREE.ConeGeometry(4.6, 11, 3), sailMat);
+    sail.scale.z = 0.18; sail.position.set(1.5, 8.6, 0); b.add(sail);
+    b.position.set(bx, 0.5, bz); b.rotation.y = bry;
+    boatGroup.add(b);
+  }
+  scene.add(boatGroup);
+
+  // Parked aircraft beside the hangar — airfield life for the menu backdrop.
+  const parked1 = buildAircraft('rajawali');
+  parked1.group.position.set(-185, RUNWAY.y + 2.3, 838); parked1.group.rotation.y = -0.5;
+  scene.add(parked1.group);
+  const parked2 = buildAircraft('garuda');
+  parked2.group.position.set(120, RUNWAY.y + 2.0, 845); parked2.group.rotation.y = 0.65;
+  scene.add(parked2.group);
 
   // Volcano lava + smoke.
   const volc = ISLANDS[1];
