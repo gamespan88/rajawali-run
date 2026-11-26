@@ -307,8 +307,8 @@ function updateCamera(dt) {
     const cx = mode === 'menu' ? -330 : P ? P.x : -330;
     const cz = RUNWAY.cz, cy = RUNWAY.y + 2.3;
     const ang = SHOT === 'complete' ? 0.9 : SHOT === 'title' ? -0.15 : SHOT ? -0.5 : performance.now() * 0.00004;
-    const r = mode === 'menu' ? (SHOT === 'title' ? 52 : 64) : 120;
-    camera.position.set(cx + Math.cos(ang) * r, cy + (mode === 'menu' ? (SHOT === 'title' ? 11 : 13) : 26), cz + Math.sin(ang) * r);
+    const r = mode === 'menu' ? (SHOT === 'title' ? 56 : 64) : (SHOT === 'complete' ? 108 : 120);
+    camera.position.set(cx + Math.cos(ang) * r, cy + (mode === 'menu' ? (SHOT === 'title' ? 12 : 13) : (SHOT === 'complete' ? 32 : 26)), cz + Math.sin(ang) * r);
     camera.lookAt(cx + 10, cy + 5, cz);
     camera.fov = 55; camera.updateProjectionMatrix();
     return;
@@ -410,6 +410,7 @@ function stageShot() {
   if (SHOT === 'title') {
     sel.aircraft = 0; sel.sortie = 0; sel.lighting = 'pagi';
     buildScene(); parkPlane();
+    P.x = -310; syncPlaneMesh();
     mode = 'menu';
   } else if (SHOT === 'rings') {
     sel.lighting = 'pagi'; buildScene(); resetFlight();

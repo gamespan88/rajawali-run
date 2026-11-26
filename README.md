@@ -47,8 +47,8 @@ and the sector map, so what you see is exactly what you can hit.
 Static files under `game/`, rendered with three.js (vendored) over a
 hand-built low-poly world: one height field generates the island
 terrain mesh with vertex-coloured beaches, jungle, rock and ash,
-fifteen hundred instanced trees, four villages, sailboats on the
-water, parked aircraft by the hangar, a smoking volcano, a lighthouse
+fifteen hundred instanced trees, scattered boulders, four villages,
+sailboats on the water, parked aircraft by the hangar, a smoking volcano, a lighthouse
 with a rotating beam, and a full airfield — runway numbers, sequenced
 approach lights, PAPI units that answer your glide in real time.
 Aircraft are modelled from primitives with canvas-painted liveries,

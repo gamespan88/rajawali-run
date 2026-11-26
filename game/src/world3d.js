@@ -258,6 +258,25 @@ export function buildWorld(scene, lightingName) {
   parked2.group.position.set(120, RUNWAY.y + 2.0, 845); parked2.group.rotation.y = 0.65;
   scene.add(parked2.group);
 
+  // Rocks — instanced boulders scattered on the slopes for surface texture.
+  const rocks = new THREE.InstancedMesh(new THREE.DodecahedronGeometry(6),
+    new THREE.MeshStandardMaterial({ color: 0x8a8578, flatShading: true, roughness: 1 }), 260);
+  let ri = 0, rguard = 0;
+  while (ri < 260 && rguard++ < 4000) {
+    const x = (rnd() - 0.5) * 7200, z = (rnd() - 0.5) * 7200;
+    const h = heightAt(x, z);
+    if (h < 25 || h > 380) continue;
+    if (Math.abs(z - RUNWAY.cz) < 185 && Math.abs(x) < 2500) continue;
+    const s = 0.5 + rnd() * 1.3;
+    dummy.position.set(x, h + 2 * s, z);
+    dummy.scale.set(s, s * (0.7 + rnd() * 0.5), s);
+    dummy.rotation.set(rnd() * 3, rnd() * 3, rnd() * 3);
+    dummy.updateMatrix();
+    rocks.setMatrixAt(ri++, dummy.matrix);
+  }
+  rocks.count = ri;
+  scene.add(rocks);
+
   // Volcano lava + smoke.
   const volc = ISLANDS[1];
   const lava = new THREE.Mesh(new THREE.CircleGeometry(120, 24),
@@ -416,7 +435,7 @@ export function buildGates(scene, world, sortie) {
     const g = c.getContext('2d');
     const gr = g.createRadialGradient(64, 64, 20, 64, 64, 64);
     gr.addColorStop(0, 'rgba(255,190,60,0)');
-    gr.addColorStop(0.78, 'rgba(255,190,60,0.16)');
+    gr.addColorStop(0.78, 'rgba(255,190,60,0.10)');
     gr.addColorStop(0.92, 'rgba(255,205,90,0.5)');
     gr.addColorStop(1, 'rgba(255,205,90,0)');
     g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
@@ -428,7 +447,7 @@ export function buildGates(scene, world, sortie) {
       new THREE.MeshBasicMaterial({ color: 0xffc44d }));
     grp.add(ring);
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false }));
-    glow.scale.set(100, 100, 1);
+    glow.scale.set(74, 74, 1);
     grp.add(glow);
     // Face the ring along the direction to the next point (or the runway).
     const nxt = sortie.gates[i + 1] || { x: RUNWAY.cx - Math.cos(sortie.landHdg) * 500, y: 60, z: RUNWAY.cz - Math.sin(sortie.landHdg) * 0 + 0 };
