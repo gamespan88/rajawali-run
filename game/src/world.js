@@ -50,7 +50,7 @@ export function buildWorld(route) {
     const side = i % 2 === 0 ? 1 : -1;
     const x = side * (60 + rng() * 150);
     const y = 130 + rng() * 170; // ring centre altitude, metres
-    rings.push({ i, x, y, z, r: 42, state: "next" });
+    rings.push({ i, x, y, z, r: 42, state: i === 0 ? "next" : "upcoming" });
     z += 620 + rng() * 260;
   }
   const courseEnd = z + 500;

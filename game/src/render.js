@@ -339,6 +339,31 @@ export function drawRing(ctx, ring, cam, t, isNext) {
   ctx.ellipse(p.x, p.y, rx, ry, 0, Math.PI * 1.15, Math.PI * 1.6);
   ctx.stroke();
   ctx.restore();
+  // HUD target brackets + range on the next ring (Ace Combat style).
+  if (isNext && !passed && !missed && rx > 26) {
+    const bx = rx + 16;
+    const by = ry + 16;
+    const L = Math.min(22, bx * 0.4);
+    ctx.strokeStyle = "#4dff9e";
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      ctx.moveTo(p.x + sx * bx - sx * L, p.y + sy * by);
+      ctx.lineTo(p.x + sx * bx, p.y + sy * by);
+      ctx.lineTo(p.x + sx * bx, p.y + sy * by - sy * L);
+    }
+    ctx.stroke();
+    const dist = Math.round(Math.hypot(ring.x - cam.x, ring.z - cam.z));
+    ctx.font = "700 13px 'Cascadia Mono', Consolas, monospace";
+    ctx.textAlign = "center";
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = "rgba(4,12,8,0.65)";
+    const label = `TGT ${dist} M`;
+    ctx.strokeText(label, p.x, p.y - by - 10);
+    ctx.fillStyle = "#4dff9e";
+    ctx.fillText(label, p.x, p.y - by - 10);
+    ctx.textAlign = "left";
+  }
 }
 
 function drawCloud(ctx, cl, cam) {
@@ -539,4 +564,10 @@ export function drawWorld(ctx, world, cam, plane, t, view) {
     drawPlaneShadow(ctx, plane, cam);
     drawPlane(ctx, plane, t);
   }
+  // Cinematic vignette over the world (HUD stays crisp on top).
+  const vg = ctx.createRadialGradient(640, 360, 430, 640, 360, 880);
+  vg.addColorStop(0, "rgba(5,10,16,0)");
+  vg.addColorStop(1, "rgba(5,10,16,0.22)");
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
 }

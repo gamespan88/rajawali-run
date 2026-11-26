@@ -174,6 +174,8 @@ function checkRings() {
       missBuzz();
     }
     world.nextIdx += 1;
+    const nxt = world.rings[world.nextIdx];
+    if (nxt) nxt.state = "next";
     if (world.nextIdx >= world.rings.length) {
       setBanner("ALL RINGS FLOWN", "FINAL — LINE UP ON THE RUNWAY", "#ffb340", 2.4);
     }
@@ -362,9 +364,9 @@ function frame(ts) {
     drawWorld(ctx, st.world, cam, st.plane, t, st.view);
     if (st.view === "cockpit") {
       drawCockpit(ctx);
-      drawCockpitHud(ctx, st);
+      drawCockpitHud(ctx, st, t);
     } else {
-      drawChaseHud(ctx, st);
+      drawChaseHud(ctx, st, t);
     }
     drawBanner(ctx, st, t);
     if (st.mode === "paused") drawPaused(ctx);
