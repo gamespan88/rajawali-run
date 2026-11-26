@@ -19,10 +19,11 @@ rings, par time and light.
   altitude, speed and heading on a lit instrument strip, with a
   compass ribbon, artificial horizon, throttle and VSI.
 - **Cockpit view** — dashboard dials lit (altimeter, horizon, heading,
-  airspeed), the runway ahead with its approach lights sequencing, on
-  final at sunset.
-- **Route complete** — stars, time against par, ring and landing
-  points, and a course map showing every ring flown.
+  airspeed, fuel gauge), a GPS course radar, the runway ahead with its
+  approach lights sequencing and PAPI glide lights (two white, two red
+  on the 3° path), on final at sunset.
+- **Route complete** — stars, time against par, ring, landing, time
+  and fuel points, and a course map showing every ring flown.
 
 ## How it plays
 
@@ -30,6 +31,9 @@ rings, par time and light.
 - **C** chase / cockpit camera · **P** pause · **R** retry · mouse drag also steers
 - Rings score more when flown in a combo; the landing is rated
   PERFECT / SMOOTH / FIRM by sink rate, speed and centreline.
+- Fuel burns with the throttle and pays a bonus for what is left in
+  the tank — run dry and you glide. A course radar (chase view and
+  cockpit GPS) tracks every ring, island and the runway.
 - Islands have real height — clip one and the race ends. So does the sea.
 
 ## How it is built

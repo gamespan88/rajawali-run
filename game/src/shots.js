@@ -24,7 +24,7 @@ export function applyShot(st, name, { startRoute }) {
     Object.assign(st.plane, {
       x: ring.x - 36, y: ring.y + 16, z: ring.z - 300,
       speed: 47, throttle: 0.82, bank: 0.38, pitch: 0.06,
-      heading: 0.1,
+      heading: 0.1, fuel: 0.62,
     });
     st.view = "chase";
     st.banner = null;
@@ -41,9 +41,9 @@ export function applyShot(st, name, { startRoute }) {
     st.score = 1125;
     st.timeSec = 96;
     Object.assign(st.plane, {
-      x: 18, y: 58, z: w.runway.z - 560,
+      x: 18, y: 52, z: w.runway.z - 470,
       speed: 33, throttle: 0.42, bank: -0.05, pitch: -0.12,
-      heading: -0.02,
+      heading: -0.02, fuel: 0.38,
     });
     st.view = "cockpit";
     st.banner = null;
@@ -65,8 +65,10 @@ export function applyShot(st, name, { startRoute }) {
     st.stars = 3;
     Object.assign(st.plane, {
       x: 2, y: w.runway.y, z: w.runway.z + 40,
-      speed: 0, throttle: 0, bank: 0, pitch: 0,
+      speed: 0, throttle: 0, bank: 0, pitch: 0, fuel: 0.41,
     });
+    st.fuelBonus = Math.round(0.41 * 200);
+    st.score = st.ringPoints + st.landingBonus + st.timeBonus + st.fuelBonus;
     st.mode = "complete";
     st.unlocked = 2; // route 2 earned, as a real finish would leave it
     st.banner = null;

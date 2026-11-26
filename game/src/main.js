@@ -43,6 +43,8 @@ const st = {
   landingRating: "",
   landingBonus: 0,
   timeBonus: 0,
+  fuelBonus: 0,
+  fuelWarned: false,
   crashTitle: "",
   crashWhy: "",
   unlocked: progress.unlocked,
@@ -53,7 +55,7 @@ const st = {
 function newPlane() {
   return {
     x: 0, y: 150, z: 0,
-    speed: 40, throttle: 0.72,
+    speed: 40, throttle: 0.72, fuel: 1,
     heading: 0, headingDeg: 0,
     bank: 0, pitch: 0, vsi: 0,
     screenX: 0, screenY: 0,
@@ -77,6 +79,8 @@ function startRoute(idx) {
   st.landingRating = "";
   st.landingBonus = 0;
   st.timeBonus = 0;
+  st.fuelBonus = 0;
+  st.fuelWarned = false;
   st.mode = "flying";
   setBanner(st.route.name, st.route.sub, "#ffb340", 2.6);
   say(`Route ${st.route.id}, ${st.route.name}. Fly through ${st.world.rings.length} rings, then land on the runway.`);
@@ -113,14 +117,22 @@ function updateFlight(dt) {
   // Rudder fine trim.
   if (down("KeyA")) p.heading -= dt * 0.12;
   if (down("KeyD")) p.heading += dt * 0.12;
+  // Fuel burns with the throttle; an empty tank means gliding home.
+  p.fuel = Math.max(0, p.fuel - dt * (0.0021 + p.throttle * 0.0043));
+  if (p.fuel < 0.25 && !st.fuelWarned) {
+    st.fuelWarned = true;
+    setBanner("LOW FUEL", "EASE OFF THE THROTTLE", "#e8a33d", 2.2);
+  }
+  const flameout = p.fuel <= 0;
   // Speed chases the throttle.
-  const targetSpeed = 22 + p.throttle * 48;
+  const targetSpeed = flameout ? 24 : 22 + p.throttle * 48;
   p.speed += (targetSpeed - p.speed) * Math.min(1, dt * 0.55);
   // Turn from bank; vertical speed from pitch, throttle and stall.
   const turnRate = p.bank * 0.5 * Math.max(0.55, Math.min(1.25, 34 / p.speed));
   p.heading += turnRate * dt;
   p.headingDeg = ((p.heading * 180 / Math.PI) % 360 + 360) % 360;
   let vsi = p.pitch * p.speed * 0.4 + (p.throttle - 0.42) * 2.4;
+  if (flameout) vsi -= 1.7; // a dead engine only glides down
   if (p.speed < 25 && p.pitch > 0.1) vsi -= (25 - p.speed) * 0.24; // stall sink
   p.vsi = vsi;
   p.y += vsi * dt;
@@ -134,7 +146,7 @@ function updateFlight(dt) {
   checkRings();
   checkLandingAndTerrain();
   updateGuide();
-  engineSound(p.throttle, true);
+  engineSound(p.throttle, p.fuel > 0);
 }
 
 function checkRings() {
@@ -205,7 +217,8 @@ function checkLandingAndTerrain() {
     st.landingRating = rating;
     st.landingBonus = bonus;
     st.timeBonus = Math.max(0, Math.round((st.route.par - st.timeSec)) * 5);
-    st.score = st.ringPoints + bonus + st.timeBonus;
+    st.fuelBonus = Math.round(p.fuel * 200);
+    st.score = st.ringPoints + bonus + st.timeBonus + st.fuelBonus;
     st.stars = Math.min(3, 1 + (st.ringsHit === world.rings.length ? 1 : 0) + (rating !== "FIRM" ? 1 : 0));
     st.mode = "complete";
     engineSound(0, false);

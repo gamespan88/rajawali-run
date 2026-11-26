@@ -234,7 +234,7 @@ function drawIsland(ctx, isl, cam, t) {
 }
 
 // The runway strip in true perspective (projected corners) + approach lights.
-export function drawRunway(ctx, world, cam, t) {
+export function drawRunway(ctx, world, cam, t, plane) {
   const rw = world.runway;
   const hz = rw.z - rw.len / 2;
   const nz = rw.z + rw.len / 2;
@@ -282,6 +282,31 @@ export function drawRunway(ctx, world, cam, t) {
     ctx.beginPath();
     ctx.arc(p.x, p.y, Math.max(1.6, 3.4 * p.s * 0.35), 0, Math.PI * 2);
     ctx.fill();
+  }
+  // PAPI glide lights beside the threshold: white when high, red when
+  // low, two-and-two on the 3° glide path to the aim point.
+  if (plane) {
+    const aimZ = nz - 40;
+    const dz = aimZ - plane.z;
+    let whites = 2;
+    if (dz > 0) {
+      const dev = plane.y - (rw.y + 4 + dz * 0.052);
+      whites = dev > 14 ? 4 : dev > 5 ? 3 : dev > -5 ? 2 : dev > -14 ? 1 : 0;
+    }
+    for (let i = 0; i < 4; i++) {
+      const p = project(cam, rw.x - rw.wid / 2 - 13 - i * 10, rw.y + 1.5, nz - 30);
+      if (!p) continue;
+      const w = Math.max(2.2, 11 * p.s * 0.4);
+      const h = Math.max(1.6, 6.5 * p.s * 0.4);
+      const col = i < whites ? "#ffffff" : "#ff4747";
+      ctx.fillStyle = col;
+      ctx.globalAlpha = 0.28;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, w * 0.95, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillRect(p.x - w / 2, p.y - h / 2, w, h);
+    }
   }
 }
 
@@ -504,7 +529,7 @@ export function drawWorld(ctx, world, cam, plane, t, view) {
     if (it.k === "i") drawIsland(ctx, it.o, cam, t);
     else drawCloud(ctx, it.o, cam);
   }
-  drawRunway(ctx, world, cam, t);
+  drawRunway(ctx, world, cam, t, plane);
   const rings = [...world.rings].sort((a, b) => b.z - a.z);
   for (const r of rings) {
     if (r.state === "passed" && r.z < cam.z) continue;

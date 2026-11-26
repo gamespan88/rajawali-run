@@ -109,19 +109,20 @@ export function drawComplete(ctx, st) {
     ["RING POINTS", `${st.ringPoints}`],
     ["LANDING BONUS", `${st.landingBonus}`],
     ["TIME BONUS", `${st.timeBonus}`],
+    ["FUEL BONUS", `${st.fuelBonus}  (${Math.round(Math.max(0, st.plane.fuel) * 100)}% left)`],
   ];
   rows.forEach(([k, v], i) => {
-    const y = 292 + i * 30;
+    const y = 288 + i * 28;
     txt(ctx, 392, y, k, 14, "#5a6a78");
     txt(ctx, 888, y, v, 16, INK, 800, "right");
   });
   ctx.strokeStyle = "rgba(23,34,46,0.2)";
   ctx.beginPath();
-  ctx.moveTo(392, 292 + rows.length * 30 - 16);
-  ctx.lineTo(888, 292 + rows.length * 30 - 16);
+  ctx.moveTo(392, 288 + rows.length * 28 - 14);
+  ctx.lineTo(888, 288 + rows.length * 28 - 14);
   ctx.stroke();
-  txt(ctx, 392, 292 + rows.length * 30 + 22, "TOTAL SCORE", 16, RED);
-  txt(ctx, 888, 292 + rows.length * 30 + 22, String(st.score), 24, INK, 900, "right");
+  txt(ctx, 392, 288 + rows.length * 28 + 20, "TOTAL SCORE", 16, RED);
+  txt(ctx, 888, 288 + rows.length * 28 + 20, String(st.score), 24, INK, 900, "right");
   // Course map strip: islands as dots, rings as ticks, runway flag.
   const mx = 392, my = 528, mw = 496;
   ctx.strokeStyle = TEAL;

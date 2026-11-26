@@ -216,13 +216,20 @@ export function drawChaseHud(ctx, st) {
   label(ctx, 700, 626, "HEADING", 11);
   value(ctx, 700, 656, `${String(hdg).padStart(3, "0")}°`, 26);
   compassRibbon(ctx, 792, 618, 150, hdg);
-  // Throttle bar.
-  label(ctx, 700, 692, "THR", 10);
+  // Throttle and fuel bars.
+  label(ctx, 700, 678, "THR", 10);
   ctx.fillStyle = "#d8dee4";
-  ctx.fillRect(730, 684, 120, 9);
+  ctx.fillRect(730, 670, 120, 8);
   ctx.fillStyle = p.throttle > 0.85 ? RED : TEAL;
-  ctx.fillRect(730, 684, 120 * p.throttle, 9);
-  label(ctx, 862, 692, `VSI ${p.vsi >= 0 ? "+" : ""}${Math.round(p.vsi * 196.85)}`, 11, INK);
+  ctx.fillRect(730, 670, 120 * p.throttle, 8);
+  label(ctx, 862, 678, `VSI ${p.vsi >= 0 ? "+" : ""}${Math.round(p.vsi * 196.85)}`, 11, INK);
+  label(ctx, 700, 696, "FUEL", 10, p.fuel < 0.2 ? RED : "#5a6a78");
+  ctx.fillStyle = "#d8dee4";
+  ctx.fillRect(730, 688, 120, 8);
+  ctx.fillStyle = p.fuel < 0.2 ? RED : p.fuel < 0.38 ? "#e8a33d" : "#39d353";
+  ctx.fillRect(730, 688, 120 * Math.max(0, p.fuel), 8);
+  label(ctx, 858, 696, `${Math.round(Math.max(0, p.fuel) * 100)}%`, 11, INK);
+  drawMinimap(ctx, st, 1086, 492, 176, 208, "ARCHIPELAGO RADAR");
 }
 
 // Cockpit gauges: three big dials on the dashboard + top strip.
@@ -244,6 +251,14 @@ export function drawCockpitHud(ctx, st) {
   ctx.fillRect(372, 572 + 104 * (1 - p.throttle), 26, 104 * p.throttle);
   ctx.fillStyle = "#e8edf2";
   ctx.fillRect(366, 566 + 104 * (1 - p.throttle), 38, 10);
+  // Fuel gauge beside the quadrant.
+  label(ctx, 453, 560, "FUEL", 11, p.fuel < 0.2 ? "#ff7a6b" : "#8fa1b1");
+  ctx.fillStyle = "#39434e";
+  ctx.fillRect(444, 572, 18, 104);
+  ctx.fillStyle = p.fuel < 0.2 ? RED : p.fuel < 0.38 ? "#e8a33d" : "#39d353";
+  ctx.fillRect(444, 572 + 104 * (1 - Math.max(0, p.fuel)), 18, 104 * Math.max(0, p.fuel));
+  label(ctx, 453, 692, `${Math.round(Math.max(0, p.fuel) * 100)}%`, 11, "#e8edf2");
+  drawMinimap(ctx, st, 1088, 96, 170, 190, "GPS · ARCHIPELAGO");
   // Top strip: route, rings, time, score.
   card(ctx, 22, 20, 252, 62);
   label(ctx, 38, 44, `ROUTE ${st.route.id} · ${st.route.name}`, 12, RED);
@@ -265,6 +280,58 @@ export function drawCockpitHud(ctx, st) {
 }
 
 // Centre announcement (RING +100, FINAL APPROACH, banner events).
+// Top-down course radar: islands as blobs, rings as state dots, the
+// runway as a white bar with a flag, and the plane as a heading arrow.
+export function drawMinimap(ctx, st, x, y, w, h, title) {
+  ctx.fillStyle = "rgba(9,20,32,0.88)";
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 12);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,179,64,0.55)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  label(ctx, x + 12, y + 20, title, 10.5, GOLD);
+  label(ctx, x + w - 36, y + 20, "N ▲", 10.5, "#9fc6d8");
+  const wld = st.world;
+  const zMin = -260;
+  const zMax = wld.runway.z + 430;
+  const sx = w / 2100;
+  const sz = (h - 44) / (zMax - zMin);
+  const mx = (wx) => x + w / 2 + wx * sx;
+  const mz = (wz) => y + h - 10 - (wz - zMin) * sz;
+  for (const isl of wld.islands) {
+    ctx.fillStyle = isl.kind === "volcano" ? "#8a6844" : isl.kind === "runway" ? "#7d8894" : "#3f7d4e";
+    ctx.beginPath();
+    ctx.ellipse(mx(isl.x), mz(isl.z), Math.max(2.5, isl.r * sx), Math.max(2.5, isl.r * sz), 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(mx(wld.runway.x), mz(wld.runway.z - wld.runway.len / 2));
+  ctx.lineTo(mx(wld.runway.x), mz(wld.runway.z + wld.runway.len / 2));
+  ctx.stroke();
+  for (const r of wld.rings) {
+    ctx.fillStyle = r.state === "passed" ? "#39d353" : r.state === "missed" ? "#e5484d" : r.state === "next" ? "#ffb340" : "#57c7d4";
+    ctx.beginPath();
+    ctx.arc(mx(r.x), mz(r.z), r.state === "next" ? 4.4 : 3.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  const p = st.plane;
+  ctx.save();
+  ctx.translate(mx(p.x), mz(p.z));
+  ctx.rotate(p.heading);
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.moveTo(0, -7);
+  ctx.lineTo(4.6, 5.5);
+  ctx.lineTo(0, 2.8);
+  ctx.lineTo(-4.6, 5.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 export function drawBanner(ctx, st, now) {
   if (!st.banner || now > st.banner.until) return;
   const a = Math.min(1, (st.banner.until - now) / 0.4, (now - st.banner.from) / 0.15 + 0.2);
