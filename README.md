@@ -15,13 +15,16 @@ rings, par time and light.
 - **Title** — the archipelago vista with the hero volcano, route cards
   for all three routes, and the control chips.
 - **Chase view** — the seaplane in frame, banking for the next glowing
-  ring; volcano, rice terraces, town and lighthouse islands below;
-  altitude, speed and heading on a lit instrument strip, with a
-  compass ribbon, artificial horizon, throttle and VSI.
+  ring; volcano, rice terraces, town and lighthouse islands below; a
+  real flight-game HUD in dark glass and phosphor green: scrolling
+  airspeed / altitude tapes with colour arcs, a compass tape, a pitch
+  ladder with flight-path vector, target brackets with range on the
+  next ring, a radar scope with sweep, engine and waypoint blocks.
 - **Cockpit view** — dashboard dials lit (altimeter, horizon, heading,
-  airspeed, fuel gauge), a GPS course radar, the runway ahead with its
-  approach lights sequencing and PAPI glide lights (two white, two red
-  on the 3° path), on final at sunset.
+  airspeed, fuel gauge), GEAR / FLAPS annunciators, a GPS course
+  radar, the runway ahead with its approach lights sequencing and
+  PAPI glide lights (two white, two red on the 3° path), on final at
+  sunset.
 - **Route complete** — stars, time against par, ring, landing, time
   and fuel points, and a course map showing every ring flown.
 
