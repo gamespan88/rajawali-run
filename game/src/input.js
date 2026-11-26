@@ -1,49 +1,25 @@
-// input.js — keyboard and mouse controls.
-// Arrows / WASD steer, W/S or +/- throttle, C camera, P pause, R retry,
-// Enter starts. Mouse: hold and drag to bank and pitch.
-
-export const input = {
-  keys: new Set(),
-  pressed: new Set(), // keys that went down this frame
-  mouseDown: false,
-  mouseDX: 0, // -1..1 drag offset from centre, steers the plane
-  mouseDY: 0,
-};
-
-export function initInput(canvas) {
-  addEventListener("keydown", (e) => {
-    if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) {
-      e.preventDefault();
-    }
-    if (!input.keys.has(e.code)) input.pressed.add(e.code);
-    input.keys.add(e.code);
+// input.js — keyboard state, one-shot presses and canvas clicks.
+export function createInput(canvas) {
+  const keys = new Set();
+  const pressed = new Set();
+  const clicks = [];
+  addEventListener('keydown', (e) => {
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+    if (!e.repeat) pressed.add(e.code);
+    keys.add(e.code);
   });
-  addEventListener("keyup", (e) => input.keys.delete(e.code));
-  canvas.addEventListener("pointerdown", (e) => {
-    input.mouseDown = true;
-    input.mouseDX = (e.clientX / innerWidth) * 2 - 1;
-    input.mouseDY = (e.clientY / innerHeight) * 2 - 1;
+  addEventListener('keyup', (e) => keys.delete(e.code));
+  canvas.addEventListener('mousedown', (e) => {
+    const r = canvas.getBoundingClientRect();
+    clicks.push({
+      x: (e.clientX - r.left) * (1280 / r.width),
+      y: (e.clientY - r.top) * (720 / r.height),
+    });
   });
-  addEventListener("pointermove", (e) => {
-    if (!input.mouseDown) return;
-    input.mouseDX = (e.clientX / innerWidth) * 2 - 1;
-    input.mouseDY = (e.clientY / innerHeight) * 2 - 1;
-  });
-  addEventListener("pointerup", () => {
-    input.mouseDown = false;
-    input.mouseDX = 0;
-    input.mouseDY = 0;
-  });
-}
-
-export function down(...codes) {
-  return codes.some((c) => input.keys.has(c));
-}
-
-export function tapped(...codes) {
-  return codes.some((c) => input.pressed.has(c));
-}
-
-export function endFrame() {
-  input.pressed.clear();
+  return {
+    keys, clicks,
+    take(code) { const t = pressed.has(code); pressed.delete(code); return t; },
+    takeAny(codes) { for (const c of codes) if (this.take(c)) return c; return null; },
+    endFrame() { pressed.clear(); },
+  };
 }

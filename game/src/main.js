@@ -1,401 +1,490 @@
-// main.js — Rajawali Run: game state, the flight model, ring and
-// landing rules, and the frame loop. Views: chase and cockpit.
+// main.js — RAJAWALI WINGS: game state, flight model, cameras, scoring.
+// A 3D archipelago air race: pick an airframe and a sortie in the hangar,
+// fly the gold gates, then grease the landing on the island runway.
+import * as THREE from 'three';
+import { buildWorld, buildGates, setGateState, updateWorld, updatePAPI, heightAt, RUNWAY, SORTIES } from './world3d.js';
+import { AIRCRAFT, buildAircraft } from './plane.js';
+import { drawFlightHud, drawCockpitHud, zoneName } from './hud.js';
+import { createScreens } from './screens.js';
+import { createInput } from './input.js';
+import { createAudio } from './audio.js';
 
-import { ROUTES, buildWorld } from "./world.js";
-import { drawWorld, drawCockpit } from "./render.js";
-import { drawChaseHud, drawCockpitHud, drawBanner } from "./hud.js";
-import { drawTitle, drawComplete, drawCrashed, drawPaused } from "./screens.js";
-import { initInput, input, down, tapped, endFrame } from "./input.js";
-import { initAudio, engineSound, ringChime, missBuzz, fanfare, thud, click } from "./audio.js";
-import { applyShot } from "./shots.js";
+const glCanvas = document.getElementById('gl');
+const hudCanvas = document.getElementById('hud');
+const ctx = hudCanvas.getContext('2d');
+const renderer = new THREE.WebGLRenderer({ canvas: glCanvas, antialias: true });
+renderer.setSize(1280, 720, false);
+renderer.setPixelRatio(1);
+const camera = new THREE.PerspectiveCamera(62, 1280 / 720, 0.5, 42000);
+const input = createInput(hudCanvas);
+const audio = createAudio();
+const screens = createScreens();
+const params = new URLSearchParams(location.search);
+const SHOT = params.get('shot');
 
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
-const statusEl = document.getElementById("status");
-const W = 1280;
-const H = 720;
+const sel = { aircraft: 0, sortie: 0, lighting: 'pagi' };
+let lightingTouched = false;
+let mode = 'menu'; // menu | fly | results | crashed
+let paused = false;
+let view = 'chase';
+let scene = null, world = null, planeObj = null, shadowDisc = null;
+let P = null, gateIdx = 0, gatesDone = 0, score = 0, combo = 0, maxCombo = 0;
+let phase = 'gates', elapsed = 0, banner = null, res = null, crashInfo = null;
+let gateNormals = [], prevRel = 0, landed = false, wasAirborne = false;
+let camPos = new THREE.Vector3(-460, 60, 460);
+const clock = new THREE.Clock();
 
-let progress = { unlocked: 1, best: {} };
-try {
-  const saved = localStorage.getItem("rajawali-run");
-  if (saved) progress = JSON.parse(saved);
-} catch { /* storage is a bonus, never required */ }
+const sortie = () => SORTIES[sel.sortie];
+const aircraft = () => AIRCRAFT[sel.aircraft];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const courseDegOf = (c) => ((90 - c * 180 / Math.PI) % 360 + 360) % 360;
 
-function saveProgress() {
-  try { localStorage.setItem("rajawali-run", JSON.stringify(progress)); } catch { /* ok */ }
+function disposeScene() {
+  if (!scene) return;
+  scene.traverse((o) => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => { if (m.map) m.map.dispose(); m.dispose(); });
+  });
+}
+function buildScene() {
+  disposeScene();
+  scene = new THREE.Scene();
+  world = buildWorld(scene, sel.lighting);
+  planeObj = buildAircraft(aircraft().id);
+  planeObj.group.rotation.order = 'YZX';
+  scene.add(planeObj.group);
+  shadowDisc = new THREE.Mesh(new THREE.CircleGeometry(7.5, 20),
+    new THREE.MeshBasicMaterial({ color: 0x06131c, transparent: true, opacity: 0.32, depthWrite: false }));
+  shadowDisc.rotation.x = -Math.PI / 2;
+  scene.add(shadowDisc);
 }
 
-const st = {
-  mode: "title",
-  routeIdx: 0,
-  route: ROUTES[0],
-  world: null,
-  view: "chase",
-  plane: null,
-  score: 0,
-  ringPoints: 0,
-  combo: 0,
-  ringsHit: 0,
-  timeSec: 0,
-  banner: null,
-  guide: null,
-  stars: 0,
-  landingRating: "",
-  landingBonus: 0,
-  timeBonus: 0,
-  fuelBonus: 0,
-  fuelWarned: false,
-  crashTitle: "",
-  crashWhy: "",
-  unlocked: progress.unlocked,
-  best: progress.best,
-  titleZ: 0,
-};
+function gateNormal(i) {
+  const s = sortie();
+  const g = s.gates[i];
+  const n = s.gates[i + 1] || { x: RUNWAY.cx - Math.cos(s.landHdg) * 800, y: 55, z: RUNWAY.cz };
+  const v = new THREE.Vector3(n.x - g.x, 0, n.z - g.z);
+  return v.normalize();
+}
 
-function newPlane() {
-  return {
-    x: 0, y: 150, z: 0,
-    speed: 40, throttle: 0.72, fuel: 1,
-    heading: 0, headingDeg: 0,
-    bank: 0, pitch: 0, vsi: 0,
-    screenX: 0, screenY: 0,
+function resetFlight() {
+  const s = sortie();
+  P = {
+    x: -390, y: RUNWAY.y + 2.3, z: RUNWAY.cz, course: 0, pitch: 0, roll: 0,
+    speed: 0, vy: 0, throttle: 0, fuel: s.startFuel, airframe: 1,
+    gearDown: true, flaps: 0, onGround: true, stall: false, flameout: false,
   };
+  gateIdx = 0; gatesDone = 0; score = 0; combo = 0; maxCombo = 0;
+  phase = 'gates'; elapsed = 0; landed = false; wasAirborne = false; paused = false;
+  gateNormals = s.gates.map((_, i) => gateNormal(i));
+  prevRel = -1e9;
+  buildGates(scene, world, s);
+  banner = { title: 'THROTTLE UP', sub: 'W — full throttle · pull ↓ at rotate speed', until: performance.now() + 4600 };
+  camPos.set(P.x - 30, P.y + 9, P.z + 14);
+  mode = 'fly';
 }
 
-function startRoute(idx) {
-  st.routeIdx = idx;
-  st.route = ROUTES[idx];
-  st.world = buildWorld(st.route);
-  st.world.nextIdx = 0;
-  st.plane = newPlane();
-  st.view = "chase";
-  st.score = 0;
-  st.ringPoints = 0;
-  st.combo = 0;
-  st.ringsHit = 0;
-  st.timeSec = 0;
-  st.banner = null;
-  st.stars = 0;
-  st.landingRating = "";
-  st.landingBonus = 0;
-  st.timeBonus = 0;
-  st.fuelBonus = 0;
-  st.fuelWarned = false;
-  st.mode = "flying";
-  setBanner(st.route.name, st.route.sub, "#ffb340", 2.6);
-  say(`Route ${st.route.id}, ${st.route.name}. Fly through ${st.world.rings.length} rings, then land on the runway.`);
+function setBanner(title, sub, secs = 3.4) {
+  banner = { title, sub, until: performance.now() + secs * 1000 };
 }
 
-function setBanner(text, sub, col, dur = 1.6) {
-  const now = perfT;
-  st.banner = { text, sub, col, from: now, until: now + dur };
-}
-
-function say(text) {
-  if (statusEl) statusEl.textContent = text;
-}
-
-// ------------------------------------------------------------ flight model
-
-function updateFlight(dt) {
-  const p = st.plane;
-  // Throttle.
-  if (down("KeyW")) p.throttle = Math.min(1, p.throttle + dt * 0.45);
-  if (down("KeyS")) p.throttle = Math.max(0, p.throttle - dt * 0.45);
-  // Bank from arrows or mouse drag.
-  let bankIn = 0;
-  if (down("ArrowLeft")) bankIn -= 1;
-  if (down("ArrowRight")) bankIn += 1;
-  if (input.mouseDown) bankIn += Math.max(-1, Math.min(1, input.mouseDX * 1.4));
-  p.bank += (Math.max(-1, Math.min(1, bankIn)) - p.bank) * Math.min(1, dt * 4.2);
-  // Pitch: Down arrow (or S-free stick pull) climbs, Up descends.
-  let pitchIn = 0;
-  if (down("ArrowDown")) pitchIn += 1;
-  if (down("ArrowUp")) pitchIn -= 1;
-  if (input.mouseDown) pitchIn += Math.max(-1, Math.min(1, -input.mouseDY * 1.3));
-  p.pitch += (Math.max(-1, Math.min(1, pitchIn)) - p.pitch) * Math.min(1, dt * 3.6);
-  // Rudder fine trim.
-  if (down("KeyA")) p.heading -= dt * 0.12;
-  if (down("KeyD")) p.heading += dt * 0.12;
-  // Fuel burns with the throttle; an empty tank means gliding home.
-  p.fuel = Math.max(0, p.fuel - dt * (0.0021 + p.throttle * 0.0043));
-  if (p.fuel < 0.25 && !st.fuelWarned) {
-    st.fuelWarned = true;
-    setBanner("LOW FUEL", "EASE OFF THE THROTTLE", "#e8a33d", 2.2);
+function targetPoint() {
+  const s = sortie();
+  if (phase === 'final') {
+    const dir = s.landHdg === 0 ? -1 : 1;
+    return { x: RUNWAY.cx + dir * (RUNWAY.len / 2), y: RUNWAY.y + 4, z: RUNWAY.cz };
   }
-  const flameout = p.fuel <= 0;
-  // Speed chases the throttle.
-  const targetSpeed = flameout ? 24 : 22 + p.throttle * 48;
-  p.speed += (targetSpeed - p.speed) * Math.min(1, dt * 0.55);
-  // Turn from bank; vertical speed from pitch, throttle and stall.
-  const turnRate = p.bank * 0.5 * Math.max(0.55, Math.min(1.25, 34 / p.speed));
-  p.heading += turnRate * dt;
-  p.headingDeg = ((p.heading * 180 / Math.PI) % 360 + 360) % 360;
-  let vsi = p.pitch * p.speed * 0.4 + (p.throttle - 0.42) * 2.4;
-  if (flameout) vsi -= 1.7; // a dead engine only glides down
-  if (p.speed < 25 && p.pitch > 0.1) vsi -= (25 - p.speed) * 0.24; // stall sink
-  p.vsi = vsi;
-  p.y += vsi * dt;
-  if (p.y > 640) { p.y = 640; p.vsi = Math.min(p.vsi, 0); }
-  p.x += Math.sin(p.heading) * p.speed * dt;
-  p.z += Math.cos(p.heading) * p.speed * dt;
-  p.screenX = -p.bank * 46;
-  p.screenY = -p.pitch * 30;
-  st.timeSec += dt;
-
-  checkRings();
-  checkLandingAndTerrain();
-  updateGuide();
-  engineSound(p.throttle, p.fuel > 0);
+  const g = s.gates[gateIdx];
+  return g ? { x: g.x, y: g.y, z: g.z } : { x: RUNWAY.cx, y: 60, z: RUNWAY.cz };
 }
 
-function checkRings() {
-  const p = st.plane;
-  const world = st.world;
-  const idx = world.nextIdx;
-  const ring = world.rings[idx];
-  if (!ring) return;
-  if (p.z >= ring.z && ring.state === "next") {
-    const dx = p.x - ring.x;
-    const dy = p.y - ring.y;
-    if (Math.hypot(dx, dy) <= ring.r) {
-      ring.state = "passed";
-      st.ringsHit += 1;
-      st.combo += 1;
-      const pts = 100 + (st.combo - 1) * 25;
-      st.ringPoints += pts;
-      st.score = st.ringPoints;
-      setBanner(`RING ${st.ringsHit} · +${pts}`, st.combo > 1 ? `COMBO ×${st.combo}` : "", "#39d353", 1.3);
-      ringChime(st.combo);
-    } else {
-      ring.state = "missed";
-      st.combo = 0;
-      setBanner("RING MISSED", "", "#e5484d", 1.1);
-      missBuzz();
-    }
-    world.nextIdx += 1;
-    const nxt = world.rings[world.nextIdx];
-    if (nxt) nxt.state = "next";
-    if (world.nextIdx >= world.rings.length) {
-      setBanner("ALL RINGS FLOWN", "FINAL — LINE UP ON THE RUNWAY", "#ffb340", 2.4);
-    }
-  }
+function crash(cause) {
+  mode = 'crashed';
+  crashInfo = { cause, gatesPassed: gatesDone, score };
+  audio.crash();
+  audio.engine(0, 0, false);
 }
 
-function crash(title, why) {
-  st.mode = "crashed";
-  st.crashTitle = title;
-  st.crashWhy = why;
-  engineSound(0, false);
-  thud();
-  say(`${title}. ${why}`);
+function finishSortie(sinkFpm, centerlineM) {
+  const s = sortie();
+  let grade, landPts;
+  if (sinkFpm > -260 && centerlineM < 6 && P.speed < aircraft().stall * 1.5) { grade = 'PERFECT'; landPts = 600; }
+  else if (sinkFpm > -430 && centerlineM < 11) { grade = 'SMOOTH'; landPts = 420; }
+  else if (sinkFpm > -660 && centerlineM < 17) { grade = 'FIRM'; landPts = 260; }
+  else { grade = 'HARD'; landPts = 120; P.airframe = Math.max(0.4, P.airframe - 0.25); }
+  const fuelPts = Math.round(P.fuel * 200);
+  const par = s.gates.length * 22 + 75;
+  const timePts = Math.max(0, Math.round((par - elapsed) * 2));
+  const total = score + landPts + fuelPts + timePts;
+  const mm = Math.floor(elapsed / 60), ss = Math.floor(elapsed % 60);
+  res = {
+    sortie: s, timeText: `${mm}:${String(ss).padStart(2, '0')}`, gatesPassed: gatesDone,
+    maxCombo, landingGrade: grade, sinkFpm: Math.round(sinkFpm), centerlineM: Math.round(centerlineM),
+    fuelLeft: P.fuel, gatePts: score, landPts, fuelPts, timePts, total,
+    stars: total >= 1450 ? 3 : total >= 1000 ? 2 : 1,
+  };
+  try {
+    const k = `rajawali-best-${s.id}`;
+    const prev = Number(localStorage.getItem(k) || 0);
+    if (total > prev) localStorage.setItem(k, String(total));
+  } catch (e) { /* private mode */ }
+  mode = 'results';
+  audio.fanfare();
 }
 
-function checkLandingAndTerrain() {
-  const p = st.plane;
-  const world = st.world;
-  const rw = world.runway;
-  const allRings = world.nextIdx >= world.rings.length;
+function stepFlight(dt) {
+  const ac = aircraft();
+  const s = sortie();
+  elapsed += dt;
+  // Throttle + speed.
+  if (input.keys.has('KeyW')) P.throttle = clamp(P.throttle + dt * 0.55, 0, 1);
+  if (input.keys.has('KeyS')) P.throttle = clamp(P.throttle - dt * 0.7, 0, 1);
+  if (P.flameout) P.throttle = 0;
+  const abBoost = ac.id === 'elang' && P.throttle > 0.92 ? 1.12 : 1;
+  const targetSpeed = P.throttle * ac.maxSpeed * abBoost * (P.gearDown ? 0.97 : 1);
+  const rate = targetSpeed > P.speed ? ac.accel : ac.accel * 1.7;
+  P.speed += clamp(targetSpeed - P.speed, -rate * dt, rate * dt);
+  if (P.onGround && !landed) P.speed = Math.max(0, P.speed);
+  // Fuel.
+  P.fuel -= dt * (0.0016 + P.throttle * 0.0042) * ac.burn * (P.onGround ? 0.4 : 1);
+  if (P.fuel <= 0) { P.fuel = 0; if (!P.flameout) { P.flameout = true; setBanner('FLAMEOUT', 'Out of fuel — glide for the runway', 4); } }
 
-  // Touchdown on the strip.
-  if (allRings &&
-      p.z > rw.z - rw.len / 2 && p.z < rw.z + rw.len / 2 &&
-      Math.abs(p.x - rw.x) < rw.wid / 2 + 4 &&
-      p.y <= rw.y + 2.4) {
-    const spdKt = p.speed * 1.944;
-    if (p.vsi < -5.2 || p.speed > 46) {
-      crash("HARD ARRIVAL", `You hit the strip at ${Math.round(spdKt)} kt, sinking fast.`);
-      return;
-    }
-    let rating = "FIRM";
-    let bonus = 120;
-    if (Math.abs(p.vsi) < 1.9 && p.speed < 37 && Math.abs(p.x - rw.x) < 11) {
-      rating = "PERFECT";
-      bonus = 400;
-    } else if (Math.abs(p.vsi) < 3.4 && p.speed < 42) {
-      rating = "SMOOTH";
-      bonus = 250;
-    }
-    st.landingRating = rating;
-    st.landingBonus = bonus;
-    st.timeBonus = Math.max(0, Math.round((st.route.par - st.timeSec)) * 5);
-    st.fuelBonus = Math.round(p.fuel * 200);
-    st.score = st.ringPoints + bonus + st.timeBonus + st.fuelBonus;
-    st.stars = Math.min(3, 1 + (st.ringsHit === world.rings.length ? 1 : 0) + (rating !== "FIRM" ? 1 : 0));
-    st.mode = "complete";
-    engineSound(0, false);
-    fanfare();
-    const id = st.route.id;
-    if (!st.best[id] || st.score > st.best[id].score) {
-      st.best[id] = { score: st.score, time: Math.round(st.timeSec) };
-    }
-    st.unlocked = Math.max(st.unlocked, Math.min(ROUTES.length, id + 1));
-    progress.unlocked = st.unlocked;
-    progress.best = st.best;
-    saveProgress();
-    say(`Route complete. ${rating} landing. Score ${st.score}.`);
-    return;
+  // Controls.
+  const pitchIn = (input.keys.has('ArrowDown') ? 1 : 0) - (input.keys.has('ArrowUp') ? 1 : 0);
+  const rollIn = (input.keys.has('ArrowRight') ? 1 : 0) - (input.keys.has('ArrowLeft') ? 1 : 0);
+  const yawIn = (input.keys.has('KeyD') ? 1 : 0) - (input.keys.has('KeyA') ? 1 : 0);
+  if (!P.onGround) {
+    P.pitch = clamp(P.pitch + pitchIn * dt * 0.85 - P.pitch * dt * (pitchIn ? 0.1 : 0.55), -0.62, 0.62);
+    const targetRoll = rollIn * 1.0;
+    P.roll += clamp(targetRoll - P.roll, -dt * 2.4, dt * 2.4);
+    const turnRate = clamp(9.8 * Math.tan(P.roll) / Math.max(P.speed, 20), -ac.turn, ac.turn);
+    P.course += turnRate * dt + yawIn * dt * 0.22;
+    P.course += P.roll * dt * 0.12; // adverse-yaw assist keeps turns honest
+  } else {
+    P.pitch = landed ? 0 : clamp(P.pitch + pitchIn * dt * 0.5 - P.pitch * dt * 0.8, -0.1, 0.3);
+    P.roll *= Math.max(0, 1 - dt * 6);
+    P.course += yawIn * dt * clamp(P.speed / 26, 0, 0.5) + rollIn * dt * clamp(P.speed / 40, 0, 0.3);
   }
 
-  // Overshot the island entirely.
-  if (allRings && p.z > rw.z + rw.len / 2 + 420) {
-    crash("OVERSHOT", "You flew past Pulau Elang. Turn back sooner next time.");
-    return;
-  }
+  // Vertical.
+  const stallSpeed = ac.stall * (1 - P.flaps * 0.006);
+  P.stall = !P.onGround && P.speed < stallSpeed;
+  let vy = P.speed * Math.sin(P.pitch);
+  vy += (P.flaps / 30) * (P.speed > stallSpeed * 0.8 ? 1.1 : 0);
+  if (P.stall) vy -= (stallSpeed - P.speed) * 0.42 + 1.2;
+  if (P.flameout) vy -= 1.4;
+  P.vy = vy;
 
-  // Terrain: island silhouettes have real height.
-  for (const isl of world.islands) {
-    if (isl.kind === "runway") continue;
-    const dx = p.x - isl.x;
-    const dz = p.z - isl.z;
-    const dist = Math.hypot(dx, dz);
-    if (dist < isl.r * 0.8) {
-      const hAt = isl.h * Math.max(0, 1 - dist / isl.r);
-      if (p.y < hAt + 3) {
-        crash("TERRAIN", "You clipped the island. Give the volcano more room.");
-        return;
+  // Wind (meteorological FROM → vector), gusts in the storm sortie.
+  const gust = s.id === 3 ? Math.sin(elapsed * 0.9) * 2.6 + Math.sin(elapsed * 2.7) * 1.4 : 0;
+  const windKt = s.wind.kt + gust;
+  const windRad = (s.wind.from + 180) * Math.PI / 180;
+  const windX = Math.sin(windRad) * windKt * 0.514, windZ = -Math.cos(windRad) * windKt * 0.514;
+
+  const fx = Math.cos(P.course) * Math.cos(P.pitch), fz = Math.sin(P.course) * Math.cos(P.pitch);
+  P.x += (fx * P.speed + windX * (P.onGround ? 0 : 1)) * dt;
+  P.z += (fz * P.speed + windZ * (P.onGround ? 0 : 1)) * dt;
+  if (!P.onGround) P.y += vy * dt;
+
+  // Ground contact.
+  const gh = heightAt(P.x, P.z);
+  const groundY = gh <= 0 ? 0.9 : gh + 2.3;
+  if (P.y <= groundY) {
+    const onRunway = Math.abs(P.x - RUNWAY.cx) <= RUNWAY.len / 2 + 30 && Math.abs(P.z - RUNWAY.cz) <= RUNWAY.wid / 2 + 12 && gh > 20;
+    if (!P.onGround) {
+      // Touchdown moment.
+      const sinkFpm = P.vy * 196.85;
+      if (onRunway && P.gearDown && sinkFpm > -980) {
+        audio.touchdown();
+        landed = true;
+        P.onGround = true; P.y = groundY; P.pitch = 0;
+        touchdownSink = sinkFpm; touchdownCL = Math.abs(P.z - RUNWAY.cz);
+        setBanner('TOUCHDOWN — ' + (sinkFpm > -260 ? 'GREASED IT' : sinkFpm > -430 ? 'SMOOTH' : sinkFpm > -660 ? 'FIRM' : 'HARD'), 'Roll out and stop to file the flight', 3.6);
+      } else if (onRunway && !P.gearDown) {
+        return crash('GEAR-UP LANDING — THE AIRFRAME SLIDES AND BREAKS UP');
+      } else if (onRunway && sinkFpm <= -980) {
+        return crash('HARD IMPACT — THE AIRFRAME IS LOST');
+      } else if (gh <= 0) {
+        return crash(ac.id === 'rajawali' && sinkFpm > -300 ? 'DITCHED IN THE BAY — FLOATS HELD, SORTIE OVER' : 'DOWN IN THE BAY — THE AIRFRAME IS LOST');
+      } else {
+        return crash('CAME DOWN OFF THE RUNWAY — TERRAIN IMPACT');
       }
     }
+    P.y = groundY;
+    if (landed) {
+      P.throttle = 0;
+      P.speed = Math.max(0, P.speed - dt * 13);
+      if (P.speed < 2.5) { P.speed = 0; return finishSortie(touchdownSink, touchdownCL); }
+    } else if (P.speed > stallSpeed * 1.03 && P.pitch > 0.045) {
+      P.onGround = false; wasAirborne = true;
+      setBanner('AIRBORNE', 'Follow the amber marker on the compass to gate 1', 3.2);
+    }
+  } else if (P.y > groundY + 1.2) {
+    P.onGround = false;
+  }
+  if (P.y > 1600) P.y = 1600;
+
+  // Gates.
+  if (phase === 'gates' && world.gates[gateIdx]) {
+    const g = world.gates[gateIdx];
+    const dx = P.x - g.x, dy = P.y - g.y, dz = P.z - g.z;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const rel = dx * gateNormals[gateIdx].x + dz * gateNormals[gateIdx].z;
+    if (dist < 31) {
+      combo += 1; maxCombo = Math.max(maxCombo, combo);
+      const pts = 150 + (combo - 1) * 25;
+      score += pts; gatesDone += 1;
+      setGateState(world, gateIdx, 'passed');
+      audio.gate();
+      setBanner(`GATE ${gateIdx + 1} CLEAR  +${pts}`, combo > 1 ? `Combo ×${combo} — keep the streak` : '', 1.6);
+      gateIdx += 1; prevRel = -1e9;
+      if (gateIdx >= world.gates.length) {
+        phase = 'final';
+        setBanner('FINAL APPROACH', `Land on RWY ${s.landHdg === 0 ? '09' : '27'} — gear down, follow the PAPI`, 4.2);
+      } else setGateState(world, gateIdx, 'next');
+    } else if (prevRel < 0 && rel >= 0 && dist < 320) {
+      combo = 0;
+      setGateState(world, gateIdx, 'missed');
+      audio.missed();
+      setBanner(`GATE ${gateIdx + 1} MISSED`, 'No points — press on to the next gate', 2.2);
+      gateIdx += 1; prevRel = -1e9;
+      if (gateIdx >= world.gates.length) { phase = 'final'; setBanner('FINAL APPROACH', `Land on RWY ${s.landHdg === 0 ? '09' : '27'} — gear down, follow the PAPI`, 4.2); }
+      else setGateState(world, gateIdx, 'next');
+    } else {
+      prevRel = rel;
+    }
   }
 
-  // The sea.
-  if (p.y <= 1) {
-    crash("SPLASHDOWN!", "The Elang-9 is a seaplane, but the race ends in the drink.");
+  // PAPI on final.
+  if (phase === 'final') {
+    const dir = s.landHdg === 0 ? -1 : 1;
+    const thrX = RUNWAY.cx + dir * (RUNWAY.len / 2);
+    const along = s.landHdg === 0 ? thrX - P.x : P.x - thrX;
+    if (along > -50 && along < 2200 && !P.onGround) {
+      const glideY = RUNWAY.y + Math.max(0, along) * 0.0524;
+      updatePAPI(world, s.landHdg === 0 ? '09' : '27', P.y - glideY);
+    }
   }
+
+  // One-shot keys in flight.
+  if (input.take('KeyC')) { view = view === 'chase' ? 'cockpit' : 'chase'; camera.fov = view === 'cockpit' ? 66 : 62; camera.updateProjectionMatrix(); }
+  if (input.take('KeyG')) { P.gearDown = !P.gearDown; audio.click(); }
+  if (input.take('KeyF')) { P.flaps = P.flaps >= 30 ? 0 : P.flaps + 15; audio.click(); }
+  if (input.take('KeyP') || input.take('Escape')) paused = true;
+
+  audio.engine(P.throttle, P.speed, true);
+}
+let touchdownSink = 0, touchdownCL = 0;
+
+function syncPlaneMesh() {
+  const g = planeObj.group;
+  g.position.set(P.x, P.y, P.z);
+  g.rotation.y = -P.course;
+  g.rotation.z = P.pitch;
+  g.rotation.x = -P.roll;
+  for (const p of planeObj.props) {
+    p.rotation.x -= (2 + P.throttle * 60) * (1 / 60);
+    for (const child of p.children) {
+      if (child.userData.blade) child.visible = view !== 'cockpit';
+      if (child.userData.disc) child.material.opacity = view === 'cockpit' ? 0.2 : 0.13;
+    }
+  }
+  for (const b of planeObj.burners) {
+    const on = P.throttle > 0.04;
+    b.visible = on;
+    const s = 0.35 + P.throttle * (P.throttle > 0.92 ? 1.5 : 0.95) + Math.sin(performance.now() * 0.05) * 0.06;
+    b.scale.set(s, 1, 1);
+  }
+  const gh = heightAt(P.x, P.z);
+  shadowDisc.position.set(P.x, Math.max(gh, 0) + 0.4, P.z);
+  const alt = clamp(P.y - gh, 0, 300);
+  shadowDisc.material.opacity = 0.32 * (1 - alt / 320);
+  shadowDisc.scale.setScalar(1 + alt / 90);
 }
 
-function updateGuide() {
-  const p = st.plane;
-  const world = st.world;
-  const ring = world.rings[world.nextIdx];
-  if (ring) {
-    const dist = Math.max(0, Math.round(ring.z - p.z));
-    const rel = Math.atan2(ring.x - p.x, ring.z - p.z) - p.heading;
-    const arrow = Math.sin(rel) > 0.14 ? 1 : Math.sin(rel) < -0.14 ? -1 : 0;
-    const dy = ring.y - p.y;
-    const alt = dy > 18 ? "CLIMB ▲" : dy < -18 ? "DESCEND ▼" : "LEVEL";
-    st.guide = {
-      text: `RING ${world.nextIdx + 1} OF ${world.rings.length} · ${dist} M`,
-      sub: alt, arrow, final: false,
-    };
-  } else {
-    const rw = world.runway;
-    const dist = Math.max(0, Math.round(rw.z - p.z));
-    const rel = Math.atan2(rw.x - p.x, rw.z - p.z) - p.heading;
-    const arrow = Math.sin(rel) > 0.1 ? 1 : Math.sin(rel) < -0.1 ? -1 : 0;
-    st.guide = {
-      text: `FINAL · RWY 09 · ${dist} M`,
-      sub: "PULAU ELANG — DESCEND · 55–85 KT",
-      arrow, final: true,
-    };
+function updateCamera(dt) {
+  if (mode === 'menu' || mode === 'results' || mode === 'crashed') {
+    const cx = mode === 'menu' ? -330 : P ? P.x : -330;
+    const cz = RUNWAY.cz, cy = RUNWAY.y + 2.3;
+    const ang = SHOT ? -0.5 : performance.now() * 0.00004;
+    const r = mode === 'menu' ? 64 : 120;
+    camera.position.set(cx + Math.cos(ang) * r, cy + (mode === 'menu' ? 13 : 26), cz + Math.sin(ang) * r);
+    camera.lookAt(cx + 10, cy + 5, cz);
+    camera.fov = 55; camera.updateProjectionMatrix();
+    return;
   }
+  const f = new THREE.Vector3(Math.cos(P.course) * Math.cos(P.pitch), Math.sin(P.pitch), Math.sin(P.course) * Math.cos(P.pitch));
+  if (view === 'cockpit') {
+    const fh = new THREE.Vector3(Math.cos(P.course), 0, Math.sin(P.course));
+    camera.position.set(P.x + fh.x * 2.6, P.y + 1.55, P.z + fh.z * 2.6);
+    camera.lookAt(P.x + f.x * 100, P.y + 1.55 + f.y * 100, P.z + f.z * 100);
+    camera.rotateZ(-P.roll * 0.9);
+    return;
+  }
+  const dist = aircraft().id === 'elang' ? 23 : 19.5;
+  const desired = new THREE.Vector3(P.x - f.x * dist, P.y - f.y * dist + 4.2, P.z - f.z * dist);
+  const k = 1 - Math.exp(-dt * 3.4);
+  camPos.lerp(desired, k);
+  camera.position.copy(camPos);
+  camera.lookAt(P.x + f.x * 34, P.y + 2.6, P.z + f.z * 34);
+  camera.rotateZ(-P.roll * 0.3);
 }
 
-// ------------------------------------------------------------ cameras
-
-function flightCam() {
-  const p = st.plane;
+function hudState() {
+  const s = sortie();
+  const tp = targetPoint();
+  const dx = tp.x - P.x, dz = tp.z - P.z;
+  const nextDist = Math.sqrt(dx * dx + dz * dz);
+  const targetCourse = Math.atan2(dz, dx);
+  let locDev = 0, glideDev = 0;
+  if (phase === 'final') {
+    const dir = s.landHdg === 0 ? -1 : 1;
+    const thrX = RUNWAY.cx + dir * (RUNWAY.len / 2);
+    const along = s.landHdg === 0 ? thrX - P.x : P.x - thrX;
+    const glideY = RUNWAY.y + Math.max(0, along) * 0.0524;
+    glideDev = clamp((P.y - glideY) / 34, -1, 1);
+    locDev = clamp((P.z - RUNWAY.cz) / 42, -1, 1);
+  }
   return {
-    x: p.x, y: p.y + 7, z: p.z, heading: p.heading,
-    pitchPx: -p.pitch * 40,
-  };
-}
-
-function titleCam() {
-  // A slow cinematic pass: a virtual plane ferries along route 1.
-  const z = (st.titleZ % 5200);
-  const x = Math.sin(z * 0.0011) * 130;
-  const y = 185 + Math.sin(z * 0.0007) * 22;
-  const heading = Math.cos(z * 0.0011) * 0.14;
-  return {
-    cam: { x, y: y + 7, z, heading, pitchPx: 6 },
+    view, zone: zoneName(P.x, P.z).replace('PULAU ', '') + (zoneName(P.x, P.z).startsWith('PULAU') ? '' : ''),
+    sector: zoneName(P.x, P.z) + ' SECTOR',
+    aircraft: aircraft(), sortie: s, phase,
+    gates: world.gates.map((g) => ({ x: g.x, z: g.z, state: g.state })),
+    gateIdx, gatesDone, score, combo, nextDist, targetDeg: courseDegOf(targetCourse),
+    locDev, glideDev,
+    banner: banner && performance.now() < banner.until ? banner : null,
+    wind: s.wind,
     plane: {
-      x, y, z: z + 55, speed: 44, throttle: 0.7,
-      bank: Math.cos(z * 0.0011) * 0.3, pitch: 0,
-      screenX: -305, screenY: -138,
+      x: P.x, z: P.z, course: P.course, courseDeg: courseDegOf(P.course),
+      pitchDeg: P.pitch * 180 / Math.PI, roll: P.roll,
+      knots: P.speed * 1.944, feet: P.y * 3.281, vsFpm: P.vy * 196.85,
+      throttle: P.throttle, fuel: P.fuel, airframe: P.airframe,
+      gearDown: P.gearDown, flaps: P.flaps, onGround: P.onGround,
+      stall: P.stall, flameout: P.flameout, driftX: 0,
     },
   };
 }
 
-// ------------------------------------------------------------ frame
-
-let perfT = 0;
-let lastTs = 0;
-
-function frame(ts) {
-  perfT = ts / 1000;
-  const dt = Math.min(0.033, lastTs ? (ts - lastTs) / 1000 : 0.016);
-  lastTs = ts;
-  const t = perfT;
-
-  // Fit the window, letterboxed, always rendering at 1280x720.
-  const cw = innerWidth, ch = innerHeight;
-  if (canvas.width !== cw || canvas.height !== ch) { canvas.width = cw; canvas.height = ch; }
-  const scale = Math.min(cw / W, ch / H);
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = "#0b1622";
-  ctx.fillRect(0, 0, cw, ch);
-  ctx.setTransform(scale, 0, 0, scale, (cw - W * scale) / 2, (ch - H * scale) / 2);
-
-  if (st.mode === "title") {
-    st.titleZ += dt * 44;
-    if (!st.world) { st.world = buildWorld(st.route); st.world.nextIdx = 0; }
-    if (tapped("ArrowLeft")) { st.routeIdx = (st.routeIdx + ROUTES.length - 1) % ROUTES.length; click(); }
-    if (tapped("ArrowRight")) { st.routeIdx = (st.routeIdx + 1) % ROUTES.length; click(); }
-    if (tapped("Digit1", "Digit2", "Digit3")) {
-      st.routeIdx = Number([...input.pressed].find((c) => c.startsWith("Digit"))?.slice(5)) - 1;
-    }
-    const { cam, plane } = titleCam();
-    const w = buildWorld(ROUTES[st.routeIdx]);
-    w.nextIdx = 0;
-    drawWorld(ctx, w, cam, plane, t, "chase");
-    drawTitle(ctx, st, t);
-    if (tapped("Enter") || (input.mouseDown && !st._clickGuard)) {
-      if (st.routeIdx + 1 <= st.unlocked) { initAudio(); startRoute(st.routeIdx); }
-    }
-  } else if (st.mode === "flying" || st.mode === "paused") {
-    if (st.mode === "flying") {
-      if (tapped("KeyP")) st.mode = "paused";
-      else updateFlight(dt);
-    } else if (tapped("KeyP")) st.mode = "flying";
-    if (tapped("KeyC")) st.view = st.view === "chase" ? "cockpit" : "chase";
-    if (tapped("Escape")) { st.mode = "title"; st.world = null; engineSound(0, false); }
-    const cam = flightCam();
-    drawWorld(ctx, st.world, cam, st.plane, t, st.view);
-    if (st.view === "cockpit") {
-      drawCockpit(ctx);
-      drawCockpitHud(ctx, st, t);
-    } else {
-      drawChaseHud(ctx, st, t);
-    }
-    drawBanner(ctx, st, t);
-    if (st.mode === "paused") drawPaused(ctx);
-  } else if (st.mode === "complete") {
-    const cam = flightCam();
-    drawWorld(ctx, st.world, cam, st.plane, t, "chase");
-    drawComplete(ctx, st);
-    if (tapped("Enter")) {
-      if (st.routeIdx + 1 < ROUTES.length && st.routeIdx + 2 <= st.unlocked) startRoute(st.routeIdx + 1);
-      else { st.mode = "title"; st.world = null; }
-    }
-    if (tapped("KeyR")) startRoute(st.routeIdx);
-    if (tapped("Escape")) { st.mode = "title"; st.world = null; }
-  } else if (st.mode === "crashed") {
-    const cam = flightCam();
-    drawWorld(ctx, st.world, cam, st.plane, t, "chase");
-    drawCrashed(ctx, st);
-    if (tapped("KeyR")) startRoute(st.routeIdx);
-    if (tapped("Escape")) { st.mode = "title"; st.world = null; }
-  }
-
-  endFrame();
-  requestAnimationFrame(frame);
+function projectTarget() {
+  if (!P || mode !== 'fly') return null;
+  const tp = targetPoint();
+  const v = new THREE.Vector3(tp.x, tp.y, tp.z).project(camera);
+  if (v.z > 1) return null;
+  const dx = tp.x - P.x, dy = tp.y - P.y, dz = tp.z - P.z;
+  return { gate: { gx: (v.x * 0.5 + 0.5) * 1280, gy: (-v.y * 0.5 + 0.5) * 720, dist: Math.sqrt(dx * dx + dy * dy + dz * dz) } };
 }
 
-// ------------------------------------------------------------ boot
+function handleMenuInput() {
+  for (const c of input.clicks.splice(0)) {
+    const hit = screens.hits.find((h) => c.x >= h.x && c.x <= h.x + h.w && c.y >= h.y && c.y <= h.y + h.h);
+    if (!hit) continue;
+    audio.unlock(); audio.click();
+    if (hit.type === 'aircraft') sel.aircraft = hit.idx;
+    if (hit.type === 'sortie') { sel.sortie = hit.idx; if (!lightingTouched) sel.lighting = sortie().lighting; buildScene(); parkPlane(); }
+    if (hit.type === 'lighting') { sel.lighting = hit.key; lightingTouched = true; buildScene(); parkPlane(); }
+    if (hit.type === 'fly') { resetFlight(); return; }
+    buildSceneIfAircraft(hit);
+  }
+  if (input.take('Digit1')) sel.aircraft = 0;
+  if (input.take('Digit2')) sel.aircraft = 1;
+  if (input.take('Digit3')) sel.aircraft = 2;
+  if (input.take('ArrowDown')) { sel.sortie = (sel.sortie + 1) % SORTIES.length; if (!lightingTouched) sel.lighting = sortie().lighting; buildScene(); parkPlane(); }
+  if (input.take('ArrowUp')) { sel.sortie = (sel.sortie + SORTIES.length - 1) % SORTIES.length; if (!lightingTouched) sel.lighting = sortie().lighting; buildScene(); parkPlane(); }
+  if (input.take('Enter')) { audio.unlock(); resetFlight(); }
+}
+let lastAircraft = -1;
+function buildSceneIfAircraft(hit) {
+  if (hit.type === 'aircraft' && sel.aircraft !== lastAircraft) { lastAircraft = sel.aircraft; buildScene(); parkPlane(); }
+}
+function parkPlane() {
+  P = {
+    x: -330, y: RUNWAY.y + 2.3, z: RUNWAY.cz, course: 0.42, pitch: 0, roll: 0,
+    speed: 0, vy: 0, throttle: 0, fuel: 0.9, airframe: 1,
+    gearDown: true, flaps: 0, onGround: true, stall: false, flameout: false,
+  };
+  syncPlaneMesh();
+}
 
-initInput(canvas);
-canvas.addEventListener("pointerdown", () => { initAudio(); });
-const shotName = new URLSearchParams(location.search).get("shot");
-if (shotName) applyShot(st, shotName, { startRoute, setBanner });
+function stageShot() {
+  if (!SHOT) return;
+  if (SHOT === 'title') {
+    sel.aircraft = 0; sel.sortie = 0; sel.lighting = 'pagi';
+    buildScene(); parkPlane();
+    mode = 'menu';
+  } else if (SHOT === 'rings') {
+    sel.lighting = 'pagi'; buildScene(); resetFlight();
+    setGateState(world, 0, 'passed'); setGateState(world, 1, 'passed');
+    gateIdx = 2; gatesDone = 2; score = 675; combo = 2; maxCombo = 2;
+    Object.assign(P, { x: 1830, y: 262, z: -760, pitch: 0.03, roll: -0.3, speed: 47, throttle: 0.7, fuel: 0.66, onGround: false });
+    P.course = Math.atan2(-950 - P.z, 2150 - P.x);
+    elapsed = 74; banner = null;
+    camPos.set(P.x - 15, P.y + 5, P.z + 9);
+  } else if (SHOT === 'cockpit') {
+    sel.lighting = 'pagi'; buildScene(); resetFlight();
+    for (let i = 0; i < world.gates.length; i++) setGateState(world, i, 'passed');
+    gateIdx = world.gates.length; gatesDone = 6; score = 1275; combo = 6; maxCombo = 6;
+    phase = 'final'; view = 'cockpit'; camera.fov = 66; camera.updateProjectionMatrix();
+    Object.assign(P, { x: -1250, y: 70, z: 936, course: 0.015, pitch: -0.05, roll: 0.02, speed: 33, throttle: 0.34, fuel: 0.38, onGround: false, gearDown: true, flaps: 15 });
+    elapsed = 158;
+    updatePAPI(world, '09', P.y - (RUNWAY.y + Math.max(0, (RUNWAY.cx - RUNWAY.len / 2) - P.x) * 0.0524));
+    banner = { title: 'FINAL — RWY 09', sub: 'Follow the PAPI · two white, two red', until: performance.now() + 1e9 };
+  } else if (SHOT === 'complete') {
+    sel.lighting = 'pagi'; buildScene(); resetFlight();
+    score = 1275; gatesDone = 6;
+    Object.assign(P, { x: 150, y: RUNWAY.y + 2.3, z: RUNWAY.cz, course: 0, speed: 0, throttle: 0, onGround: true });
+    res = {
+      sortie: SORTIES[0], timeText: '2:47', gatesPassed: 6, maxCombo: 6, landingGrade: 'SMOOTH',
+      sinkFpm: -264, centerlineM: 5, fuelLeft: 0.41, gatePts: 1275, landPts: 420, fuelPts: 82, timePts: 80,
+      total: 1857, stars: 3,
+    };
+    mode = 'results';
+  }
+}
+
+buildScene();
+parkPlane();
+stageShot();
+
+let last = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.05, (now - last) / 1000 || 0.016);
+  last = now;
+  if (mode === 'menu') handleMenuInput();
+  else if (mode === 'fly') {
+    if (paused) {
+      if (input.take('KeyP') || input.take('Escape')) paused = false;
+      if (input.take('KeyM')) { mode = 'menu'; paused = false; buildScene(); parkPlane(); }
+    } else if (!SHOT) {
+      stepFlight(dt); // staged screenshots freeze the flight model for determinism
+    }
+    if (input.take('KeyM') && paused) { mode = 'menu'; buildScene(); parkPlane(); }
+  } else if (mode === 'results') {
+    if (input.take('Enter')) { sel.sortie = (sel.sortie + 1) % SORTIES.length; if (!lightingTouched) sel.lighting = sortie().lighting; buildScene(); resetFlight(); }
+    if (input.take('KeyR')) { buildScene(); resetFlight(); }
+    if (input.take('KeyM')) { mode = 'menu'; buildScene(); parkPlane(); }
+  } else if (mode === 'crashed') {
+    if (input.take('KeyR')) { buildScene(); resetFlight(); }
+    if (input.take('KeyM')) { mode = 'menu'; buildScene(); parkPlane(); }
+  }
+  input.clicks.length = 0;
+  if (P) syncPlaneMesh();
+  updateWorld(world, SHOT ? 0.016 : dt);
+  updateCamera(dt);
+  renderer.render(scene, camera);
+  // Overlay. Always clear first: the menu/results overlays paint translucent
+  // dim layers, which would compound frame over frame into darkness.
+  ctx.clearRect(0, 0, 1280, 720);
+  if (mode === 'menu') screens.drawMenu(ctx, sel);
+  else {
+    const st = hudState();
+    const proj = projectTarget();
+    if (view === 'cockpit' && mode === 'fly') drawCockpitHud(ctx, st, proj);
+    else drawFlightHud(ctx, st, proj);
+    if (mode === 'results' && res) screens.drawResults(ctx, res);
+    if (mode === 'crashed' && crashInfo) screens.drawCrashed(ctx, crashInfo);
+    if (paused) screens.drawPaused(ctx);
+  }
+  input.endFrame();
+}
 requestAnimationFrame(frame);

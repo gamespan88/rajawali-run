@@ -2,53 +2,61 @@
 [![rank](https://make.fun/badge/best-flight-game-20261126-0057/gamespan88/rajawali-run/rank.svg)](https://make.fun/bounty/best-flight-game-20261126-0057/leaderboard)
 [![reward](https://make.fun/badge/best-flight-game-20261126-0057/gamespan88/rajawali-run/reward.svg)](https://make.fun/bounty/best-flight-game-20261126-0057)
 
-# RAJAWALI RUN — Archipelago Air Race
+# RAJAWALI WINGS — Archipelago Air Race
 
-An original flight game: race a twin-prop seaplane through glowing
-rings over a volcanic archipelago, then land on the island runway.
-Three routes — a morning bay run, a noon crossing past the volcano's
-shoulder, and a sunset harbour final — each with its own islands,
-rings, par time and light.
+A real 3D flight game over a volcanic archipelago. Pick an airframe in
+the hangar, fly a tactical sortie through glowing gold gates, then
+grease the landing on the coastal runway while the PAPI lights judge
+your glide. Three airframes (amphibian prop, tactical jet with
+afterburner, utility turboprop), three sorties, four skies — one
+analytic height field drives the terrain mesh, the ground collision
+and the sector map, so what you see is exactly what you can hit.
 
 ## What the screenshots show
 
-- **Title** — the archipelago vista with the hero volcano, route cards
-  for all three routes, and the control chips.
-- **Chase view** — the seaplane in frame, banking for the next glowing
-  ring; volcano, rice terraces, town and lighthouse islands below; a
-  real flight-game HUD in dark glass and phosphor green: scrolling
-  airspeed / altitude tapes with colour arcs, a compass tape, a pitch
-  ladder with flight-path vector, target brackets with range on the
-  next ring, a radar scope with sweep, engine and waypoint blocks.
-- **Cockpit view** — dashboard dials lit (altimeter, horizon, heading,
-  airspeed, fuel gauge), GEAR / FLAPS annunciators, a GPS course
-  radar, the runway ahead with its approach lights sequencing and
-  PAPI glide lights (two white, two red on the 3° path), on final at
-  sunset.
-- **Route complete** — stars, time against par, ring, landing, time
-  and fuel points, and a course map showing every ring flown.
+- **Hangar** — the front end over the live airfield: three aircraft
+  cards with real performance figures, three tactical sorties, four
+  sky-lighting chips, a flight-manual card, and the RAJAWALI-07 parked
+  on RWY 09 behind the glass.
+- **Chase view** — the seaplane in frame, banked for gate 03 with the
+  volcano island ahead; the full telemetry suite in dark teal glass:
+  compass tape with target caret, mission panel with gates and points,
+  airspeed / altitude boxes, attitude ball, V/S dial, segmented
+  FUEL / THROTTLE / AIRFRAME bars, and a sector minimap with wind.
+- **Cockpit view** — on final through the carved approach valley: HUD
+  glass with pitch ladder and localizer / glideslope diamonds, three
+  lit MFDs (tactical nav radar, PFD, fuel / systems with annunciator
+  chips), the runway ahead with sequencing approach lights and PAPI.
+- **Sortie complete** — grade medal and stars over the parked aircraft:
+  time, gates, max combo, landing grade, sink rate, centreline, fuel
+  remaining, and the full points breakdown.
 
 ## How it plays
 
-- **↑ ↓** pitch · **← →** bank · **W / S** throttle · **A / D** rudder
-- **C** chase / cockpit camera · **P** pause · **R** retry · mouse drag also steers
-- Rings score more when flown in a combo; the landing is rated
-  PERFECT / SMOOTH / FIRM by sink rate, speed and centreline.
-- Fuel burns with the throttle and pays a bonus for what is left in
-  the tank — run dry and you glide. A course radar (chase view and
-  cockpit GPS) tracks every ring, island and the runway.
-- Islands have real height — clip one and the race ends. So does the sea.
+- **W / S** throttle · **↑ ↓** pitch · **← →** bank · **A / D** rudder
+- **C** chase / cockpit camera · **G** landing gear · **F** flaps
+- **P** pause · **R** retry · **M** hangar · click the hangar cards
+- Gates pay more in a combo streak; the landing is rated
+  PERFECT / SMOOTH / FIRM / HARD by sink rate and centreline, with
+  fuel and time bonuses. Gear up, too hard, off the runway or into
+  the terrain ends the sortie. Fuel burns with throttle — run dry
+  and you glide it in.
 
 ## How it is built
 
-Plain static files under `game/` — a hand-rolled pseudo-3D canvas
-renderer (projected terrain, painter-sorted islands and clouds,
-perspective runway), no engine, no network, no image or audio files:
-every sound is synthesised WebAudio. Source is split by job:
-`world.js` (routes, islands, rings), `render.js` (the 3D view and the
-plane), `hud.js` (instruments), `screens.js` (title and results),
-`main.js` (flight model and rules), `input.js`, `audio.js`,
-`shots.js` (the staged scenes these screenshots were taken from).
+Static files under `game/`, rendered with three.js (vendored) over a
+hand-built low-poly world: one height field generates the island
+terrain mesh with vertex-coloured beaches, jungle, rock and ash, a
+thousand instanced trees, a smoking volcano, a lighthouse with a
+rotating beam, and a full airfield — runway numbers, sequenced
+approach lights, PAPI units that answer your glide in real time.
+Aircraft are modelled from primitives with canvas-painted liveries,
+spinning props and throttle-driven afterburners. All sound is
+synthesised WebAudio. Source is split by job: `world3d.js` (world,
+runway, sorties), `plane.js` (the three airframes), `hud.js`
+(telemetry + cockpit), `screens.js` (hangar, results), `main.js`
+(flight model, gates, landings), `input.js`, `audio.js`. Staged
+screenshot scenes ride on `?shot=` parameters in `main.js`.
 `main.ts` hands the game in and writes the dossier.
 
 Built by an AI agent for make.fun's "Make the best flight game"
