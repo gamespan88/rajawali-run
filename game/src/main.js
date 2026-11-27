@@ -306,10 +306,11 @@ function updateCamera(dt) {
   if (mode === 'menu' || mode === 'results' || mode === 'crashed') {
     const cx = mode === 'menu' ? -330 : P ? P.x : -330;
     const cz = RUNWAY.cz, cy = RUNWAY.y + 2.3;
-    const ang = SHOT === 'complete' ? 0.9 : SHOT === 'title' ? -0.15 : SHOT ? -0.5 : performance.now() * 0.00004;
-    const r = mode === 'menu' ? (SHOT === 'title' ? 56 : 64) : (SHOT === 'complete' ? 108 : 120);
-    camera.position.set(cx + Math.cos(ang) * r, cy + (mode === 'menu' ? (SHOT === 'title' ? 12 : 13) : (SHOT === 'complete' ? 32 : 26)), cz + Math.sin(ang) * r);
-    camera.lookAt(cx + 10, cy + 5, cz);
+    const tAng = parseFloat(params.get('ta') ?? -0.5), tR = parseFloat(params.get('tr') ?? 30), tLook = parseFloat(params.get('tl') ?? 12);
+    const ang = SHOT === 'complete' ? 0.9 : SHOT === 'title' ? tAng : SHOT ? -0.5 : performance.now() * 0.00004;
+    const r = mode === 'menu' ? (SHOT === 'title' ? tR : 64) : (SHOT === 'complete' ? 108 : 120);
+    camera.position.set(cx + Math.cos(ang) * r, cy + (mode === 'menu' ? (SHOT === 'title' ? 5 : 13) : (SHOT === 'complete' ? 32 : 26)), cz + Math.sin(ang) * r);
+    camera.lookAt(cx + (SHOT === 'title' ? tLook : 10), cy + 5, cz);
     camera.fov = 55; camera.updateProjectionMatrix();
     return;
   }
@@ -321,7 +322,7 @@ function updateCamera(dt) {
     camera.rotateZ(-P.roll * 0.9);
     return;
   }
-  const dist = aircraft().id === 'elang' ? 23 : 19.5;
+  const dist = SHOT === 'rings' ? 30 : aircraft().id === 'elang' ? 23 : 19.5;
   const desired = new THREE.Vector3(P.x - f.x * dist, P.y - f.y * dist + 4.2, P.z - f.z * dist);
   const k = 1 - Math.exp(-dt * 3.4);
   camPos.lerp(desired, k);
@@ -410,22 +411,22 @@ function stageShot() {
   if (SHOT === 'title') {
     sel.aircraft = 0; sel.sortie = 0; sel.lighting = 'pagi';
     buildScene(); parkPlane();
-    P.x = -310; syncPlaneMesh();
+    P.x = -330; P.course = parseFloat(params.get('tc') ?? 0.3); syncPlaneMesh();
     mode = 'menu';
   } else if (SHOT === 'rings') {
-    sel.lighting = 'pagi'; buildScene(); resetFlight();
+    sel.sortie = 1; sel.lighting = 'senja'; buildScene(); resetFlight();
     setGateState(world, 0, 'passed'); setGateState(world, 1, 'passed');
     gateIdx = 2; gatesDone = 2; score = 675; combo = 2; maxCombo = 2;
-    Object.assign(P, { x: 1830, y: 262, z: -760, pitch: 0.03, roll: -0.3, speed: 47, throttle: 0.7, fuel: 0.66, onGround: false });
-    P.course = Math.atan2(-950 - P.z, 2150 - P.x);
-    elapsed = 74; banner = null;
-    camPos.set(P.x - 15, P.y + 5, P.z + 9);
+    Object.assign(P, { x: 2600, y: 480, z: -1900, pitch: 0.02, roll: -0.35, speed: 47, throttle: 0.72, fuel: 0.58, onGround: false });
+    P.course = Math.atan2(-1650 - P.z, 1850 - P.x);
+    elapsed = 96; banner = null;
+    camPos.set(P.x - Math.cos(P.course) * 30, P.y + 4.2, P.z - Math.sin(P.course) * 30);
   } else if (SHOT === 'cockpit') {
     sel.lighting = 'pagi'; buildScene(); resetFlight();
     for (let i = 0; i < world.gates.length; i++) setGateState(world, i, 'passed');
     gateIdx = world.gates.length; gatesDone = 6; score = 1275; combo = 6; maxCombo = 6;
     phase = 'final'; view = 'cockpit'; camera.fov = 66; camera.updateProjectionMatrix();
-    Object.assign(P, { x: -1050, y: 62, z: 938, course: 0.015, pitch: -0.05, roll: 0.02, speed: 33, throttle: 0.34, fuel: 0.38, onGround: false, gearDown: true, flaps: 15 });
+    Object.assign(P, { x: -800, y: 52, z: 938, course: 0.015, pitch: -0.05, roll: 0.02, speed: 33, throttle: 0.34, fuel: 0.38, onGround: false, gearDown: true, flaps: 15 });
     elapsed = 158;
     updatePAPI(world, '09', P.y - (RUNWAY.y + Math.max(0, (RUNWAY.cx - RUNWAY.len / 2) - P.x) * 0.0524));
     banner = { title: 'FINAL — RWY 09', sub: 'Follow the PAPI · two white, two red', until: performance.now() + 1e9 };

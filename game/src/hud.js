@@ -322,9 +322,9 @@ export function drawCockpitHud(ctx, st, proj) {
   ctx.clearRect(0, 0, 1280, 720);
   ctx.fillStyle = '#10181d';
   ctx.beginPath();
-  ctx.moveTo(0, 0); ctx.lineTo(150, 0); ctx.lineTo(215, 300); ctx.lineTo(185, 470); ctx.lineTo(0, 500); ctx.closePath(); ctx.fill();
+  ctx.moveTo(0, 0); ctx.lineTo(95, 0); ctx.lineTo(140, 300); ctx.lineTo(125, 470); ctx.lineTo(0, 500); ctx.closePath(); ctx.fill();
   ctx.beginPath();
-  ctx.moveTo(1280, 0); ctx.lineTo(1130, 0); ctx.lineTo(1065, 300); ctx.lineTo(1095, 470); ctx.lineTo(1280, 500); ctx.closePath(); ctx.fill();
+  ctx.moveTo(1280, 0); ctx.lineTo(1185, 0); ctx.lineTo(1140, 300); ctx.lineTo(1155, 470); ctx.lineTo(1280, 500); ctx.closePath(); ctx.fill();
   ctx.fillRect(150, 0, 980, 26);
   ctx.save();
   ctx.beginPath(); ctx.roundRect(465, 120, 350, 250, 18); ctx.clip();

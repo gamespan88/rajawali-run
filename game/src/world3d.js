@@ -147,7 +147,7 @@ export function buildWorld(scene, lightingName) {
   const pos = tg.attributes.position;
   const colours = [];
   const cSand = new THREE.Color(0xd9c489), cGrass = new THREE.Color(0x5da24f), cGrass2 = new THREE.Color(0x3e7d3a),
-    cRock = new THREE.Color(0x8a7f72), cAsh = new THREE.Color(0x5c564f), cSnow = new THREE.Color(0xf2f5f7),
+    cRock = new THREE.Color(0x7e8288), cAsh = new THREE.Color(0x5c564f), cSnow = new THREE.Color(0xf2f5f7),
     cSea = new THREE.Color(0x2e7ea6);
   const tmp = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
